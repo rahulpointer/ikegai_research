@@ -1,3 +1,39 @@
+Modify the below function to add parallel processing for function pg_data.process, chunk size should be divided based on the available no of cores and use only 40% of it. At the end processed_doc which is a dictionary should be all collected in a list and then one final dictionary should be created.   
+  
+#Read all the file names from the directory  
+path = "C:/Users/rahulkumar60/Downloads/Tata Steel/TestFolder"  
+import os    
+import PyPDF2    
+    
+def process_files_of_dir(path):    
+    file_names = []    
+    for root, dirs, files in os.walk(path):    
+        for file in files:  
+            file_path = os.path.join(root, file)  
+            pdf_file = open(file_path, 'rb')  
+            #file of the directory  
+            file = open(file_path,'rb')  
+            pdfReader = PyPDF2.PdfReader(file)  
+            totalPages = len(pdfReader.pages)  
+            print(f"Total Pages: {totalPages}")  
+            print('Processing File ',file_path,'in the path',file_path, 'Total Pages in the pdf',totalPages)  
+              
+            #parallel thread based on the no of cores available. let's use 40% of the cores only.    
+              
+            print(totalPages)  
+            pg_data=DocumentProcessor(file_path,end_point=azure_doc_info.end_point,api_key=azure_doc_info.api_key)  
+  
+              
+            #process the file chunk wise  
+            processed_doc=pg_data.process(page_range=f"{start}-{last}")  
+              
+    return file_names    
+  
+  
+process_files_of_dir(path)
+
+
+
 import os  
 import PyPDF2  
 import multiprocessing  
