@@ -1,0 +1,135 @@
+import requests
+from msal import ConfidentialClientApplication
+from abc import ABC, abstractmethod
+import os
+
+class DataSource(ABC):
+    def __init__(self, connection_details):
+        self.connection_details = connection_details
+    
+    @abstractmethod
+    def test_connection(self):
+        pass
+
+    @abstractmethod
+    def list_items(self, path):
+        pass
+
+    @abstractmethod
+    def download_file(self, path, download_path):
+        pass
+
+    @abstractmethod
+    def get_file_metadata(self, path):
+        pass
+
+class OneDrive(DataSource):
+    def __init__(self, connection_details):
+        super().__init__(connection_details)
+        self.token = None
+
+    def authenticate(self):
+        authority = f"https://login.microsoftonline.com/{self.connection_details['tenant_id']}"
+        app = ConfidentialClientApplication(
+            client_id=self.connection_details['client_id'],
+            client_credential=self.connection_details['client_secret'],
+            authority=authority
+        )
+        token_response = app.acquire_token_for_client(scopes=["https://graph.microsoft.com/.default"])
+        self.token = token_response.get("access_token")
+
+    def test_connection(self):
+        try:
+            self.authenticate()
+            response = requests.get(
+                "https://graph.microsoft.com/v1.0/me/drive/root",
+                headers={'Authorization': f'Bearer {self.token}'}
+            )
+            return response.status_code == 200
+        except Exception as e:
+            print(f"Connection test failed: {e}")
+            return False
+
+    def list_items(self, path):
+        self.authenticate()
+        endpoint = f"https://graph.microsoft.com/v1.0/me/drive/root:/{path}:/children"
+        response = requests.get(
+            endpoint,
+            headers={'Authorization': f'Bearer {self.token}'}
+        )
+        if response.status_code == 200:
+            items = response.json().get('value', [])
+            return [{'name': item['name'], 'type': 'folder' if 'folder' in item else 'file'} for item in items]
+        return []
+
+    def download_file(self, path, download_path):
+        self.authenticate()
+        endpoint = f"https://graph.microsoft.com/v1.0/me/drive/root:/{path}:/content"
+        response = requests.get(
+            endpoint,
+            headers={'Authorization': f'Bearer {self.token}'},
+            stream=True
+        )
+        if response.status_code == 200:
+            with open(download_path, 'wb') as file:
+                for chunk in response.iter_content(chunk_size=8192):
+                    file.write(chunk)
+            return True
+        return False
+
+    def get_file_metadata(self, path):
+        self.authenticate()
+        endpoint = f"https://graph.microsoft.com/v1.0/me/drive/root:/{path}"
+        response = requests.get(
+            endpoint,
+            headers={'Authorization': f'Bearer {self.token}'}
+        )
+        if response.status_code == 200:
+            metadata = response.json()
+            return {
+                'name': metadata['name'],
+                'lastModifiedDateTime': metadata['lastModifiedDateTime'],
+                'size': metadata['size']
+            }
+        return {}
+
+# Mock function for retrieving secrets from Azure Key Vault
+def get_secret_from_key_vault(secret_name):
+    # Replace with actual connection details for OneDrive
+    secrets = {
+        'onedrive': {
+            'tenant_id': 'your_tenant_id',       # Replace with your Directory (tenant) ID
+            'client_id': 'your_client_id',       # Replace with your Application (client) ID
+            'client_secret': 'your_client_secret' # Replace with your client secret value
+        }
+    }
+    return secrets.get(secret_name)
+
+# Example usage
+if __name__ == "__main__":
+    onedrive_details = get_secret_from_key_vault('onedrive')
+
+    onedrive = OneDrive(onedrive_details)
+
+    print("OneDrive:")
+    if onedrive.test_connection():
+        print("Connection successful.")
+        path = ""
+        items = onedrive.list_items(path)
+        print(f"Items in '{path}':", items)
+
+        if items:
+            item_name = items[0]['name']
+            print(f"Downloading file '{item_name}'...")
+            if items[0]['type'] == 'file':
+                download_success = onedrive.download_file(item_name, f"./{item_name}")
+                if download_success:
+                    print(f"File '{item_name}' downloaded successfully.")
+                else:
+                    print(f"Failed to download file '{item_name}'.")
+
+            print(f"Getting metadata for '{item_name}'...")
+            metadata = onedrive.get_file_metadata(item_name)
+            print("Metadata:", metadata)
+    else:
+        print("Connection failed.")
