@@ -173,3 +173,66 @@ items_response = requests.get(
 items = items_response.json().get('value', [])
 for item in items:
     print(f"Name: {item['name']}, Type: {'folder' if 'folder' in item else 'file'}")
+
+
+------------------------------------------
+
+import os
+import requests
+from flask import Flask, redirect, request, url_for, session
+from msal import ConfidentialClientApplication
+
+app = Flask(__name__)
+app.secret_key = os.urandom(24)
+
+# Configuration
+CLIENT_ID = 'your_client_id'
+CLIENT_SECRET = 'your_client_secret'
+TENANT_ID = 'your_tenant_id'
+AUTHORITY = f"https://login.microsoftonline.com/{TENANT_ID}"
+REDIRECT_URI = "http://localhost:5000/getAToken"
+SCOPE = ["User.Read", "Files.Read", "Files.ReadWrite"]
+
+# MSAL Confidential Client
+app_msal = ConfidentialClientApplication(
+    client_id=CLIENT_ID,
+    client_credential=CLIENT_SECRET,
+    authority=AUTHORITY
+)
+
+@app.route('/')
+def index():
+    if not session.get('access_token'):
+        return redirect(url_for('login'))
+    return redirect(url_for('list_files'))
+
+@app.route('/login')
+def login():
+    auth_url = app_msal.get_authorization_request_url(SCOPE, redirect_uri=REDIRECT_URI)
+    return redirect(auth_url)
+
+@app.route('/getAToken')
+def authorized():
+    code = request.args.get('code')
+    result = app_msal.acquire_token_by_authorization_code(code, scopes=SCOPE, redirect_uri=REDIRECT_URI)
+    if "access_token" in result:
+        session['access_token'] = result['access_token']
+    return redirect(url_for('index'))
+
+@app.route('/list_files')
+def list_files():
+    if not session.get('access_token'):
+        return redirect(url_for('login'))
+
+    headers = {
+        'Authorization': 'Bearer ' + session['access_token']
+    }
+    response = requests.get('https://graph.microsoft.com/v1.0/me/drive/root/children', headers=headers)
+    if response.status_code == 200:
+        files = response.json().get('value', [])
+        return '<br>'.join([f"Name: {file['name']}, Type: {'Folder' if 'folder' in file else 'File'}" for file in files])
+    return 'Could not list files'
+
+if __name__ == '__main__':
+    app.run(debug=True)
+
