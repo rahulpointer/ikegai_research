@@ -135,3 +135,41 @@ if __name__ == "__main__":
             print("Metadata:", metadata)
     else:
         print("Connection failed.")
+
+
+
+---------------------------
+
+import requests
+from msal import ConfidentialClientApplication
+
+# Configuration
+tenant_id = 'your_tenant_id'
+client_id = 'your_client_id'
+client_secret = 'your_client_secret'
+
+# Authenticate
+authority = f"https://login.microsoftonline.com/{tenant_id}"
+app = ConfidentialClientApplication(
+    client_id=client_id,
+    client_credential=client_secret,
+    authority=authority
+)
+token_response = app.acquire_token_for_client(scopes=["https://graph.microsoft.com/.default"])
+access_token = token_response.get("access_token")
+
+# Get Drive ID
+drive_response = requests.get(
+    "https://graph.microsoft.com/v1.0/me/drive",
+    headers={'Authorization': f'Bearer {access_token}'}
+)
+drive_id = drive_response.json().get('id')
+
+# List Items in Root
+items_response = requests.get(
+    f"https://graph.microsoft.com/v1.0/drives/{drive_id}/root/children",
+    headers={'Authorization': f'Bearer {access_token}'}
+)
+items = items_response.json().get('value', [])
+for item in items:
+    print(f"Name: {item['name']}, Type: {'folder' if 'folder' in item else 'file'}")
