@@ -1,10 +1,7 @@
-#Should have the field details and the services which is exposed for azure sql service.
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 import pyodbc
 from abc import ABC, abstractmethod
-
-#Example usage
-#azure_sql_db = AzureSQLDatabase(azure_sql_details)
-#azure_sql_db.test_connection()
 
 class DataSource(ABC):
     def __init__(self, connection_details):
@@ -68,9 +65,60 @@ class AzureSQLDatabase(DataSource):
         """)
         return {row[0]: row[1] for row in cursor.fetchall()}
 
-
+    @staticmethod
     def get_connection_details(secret_details):
         # This function should retrieve the secret from Azure Key Vault.
-        azure_sql_connection='Driver={ODBC Driver 18 for SQL Server};Server=tcp:srvspendanalytics.database.windows.net,1433;'+f'Database={secret_details['database']};UID={secret_details['uid']};PWD={secret_details['pwd']};Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30'
+        azure_sql_connection='Driver={ODBC Driver 18 for SQL Server};Server=tcp:srvspendanalytics.database.windows.net,1433;' + \
+                              f'Database={secret_details["database"]};UID={secret_details["uid"]};PWD={secret_details["pwd"]};' + \
+                              'Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30'
         return azure_sql_connection
-    
+
+app = FastAPI()
+
+class SecretDetails(BaseModel):
+    database: str
+    uid: str
+    pwd: str
+
+@app.post("/test_connection")
+def test_connection(details: SecretDetails):
+    connection_string = AzureSQLDatabase.get_connection_details(details.dict())
+    db = AzureSQLDatabase(connection_string)
+    if db.test_connection():
+        return {"status": "Connection successful"}
+    else:
+        raise HTTPException(status_code=400, detail="Connection failed")
+
+@app.post("/schemas")
+def get_schemas(details: SecretDetails):
+    connection_string = AzureSQLDatabase.get_connection_details(details.dict())
+    db = AzureSQLDatabase(connection_string)
+    try:
+        schemas = db.get_schemas()
+        return {"schemas": schemas}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/tables")
+def get_tables(details: SecretDetails, schema: str):
+    connection_string = AzureSQLDatabase.get_connection_details(details.dict())
+    db = AzureSQLDatabase(connection_string)
+    try:
+        tables = db.get_tables(schema)
+        return {"tables": tables}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/table_metadata")
+def get_table_metadata(details: SecretDetails, schema: str, table: str):
+    connection_string = AzureSQLDatabase.get_connection_details(details.dict())
+    db = AzureSQLDatabase(connection_string)
+    try:
+        metadata = db.get_table_metadata(schema, table)
+        return {"metadata": metadata}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
