@@ -1,0 +1,76 @@
+#Should have the field details and the services which is exposed for azure sql service.
+import pyodbc
+from abc import ABC, abstractmethod
+
+#Example usage
+#azure_sql_db = AzureSQLDatabase(azure_sql_details)
+#azure_sql_db.test_connection()
+
+class DataSource(ABC):
+    def __init__(self, connection_details):
+        self.connection_details = connection_details
+    
+    @abstractmethod
+    def test_connection(self):
+        pass
+
+    @abstractmethod
+    def get_schemas(self):
+        pass
+
+    @abstractmethod
+    def get_tables(self, schema):
+        pass
+
+    @abstractmethod
+    def get_table_metadata(self, schema, table):
+        pass
+
+class AzureSQLDatabase(DataSource):
+    def __init__(self, connection_details):
+        super().__init__(connection_details)
+        self.connection = None
+
+    def connect(self):
+        if not self.connection:
+            self.connection = pyodbc.connect(self.connection_details)
+
+    def test_connection(self):
+        try:
+            self.connect()
+            cursor = self.connection.cursor()
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+            return True
+        except Exception as e:
+            print(f"Connection test failed: {e}")
+            return False
+
+    def get_schemas(self):
+        self.connect()
+        cursor = self.connection.cursor()
+        cursor.execute("SELECT schema_name FROM information_schema.schemata")
+        return [row[0] for row in cursor.fetchall()]
+
+    def get_tables(self, schema):
+        self.connect()
+        cursor = self.connection.cursor()
+        cursor.execute(f"SELECT table_name FROM information_schema.tables WHERE table_schema = '{schema}'")
+        return [row[0] for row in cursor.fetchall()]
+
+    def get_table_metadata(self, schema, table):
+        self.connect()
+        cursor = self.connection.cursor()
+        cursor.execute(f"""
+            SELECT column_name, data_type
+            FROM information_schema.columns
+            WHERE table_schema = '{schema}' AND table_name = '{table}'
+        """)
+        return {row[0]: row[1] for row in cursor.fetchall()}
+
+
+    def get_connection_details(secret_details):
+        # This function should retrieve the secret from Azure Key Vault.
+        azure_sql_connection='Driver={ODBC Driver 18 for SQL Server};Server=tcp:srvspendanalytics.database.windows.net,1433;'+f'Database={secret_details['database']};UID={secret_details['uid']};PWD={secret_details['pwd']};Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30'
+        return azure_sql_connection
+    
